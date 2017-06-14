@@ -3,7 +3,6 @@ Document Models
 
 UQFinal is powered completely by AWS DynamoDB
 """
-import boto3
 import urlparse
 
 import scraper
@@ -59,6 +58,9 @@ class Offering(DynamoDBCachedObject):
     def get_table_name(self):
         return "uqfinal-offerings"
 
+    # Table
+    table = None
+
     # Key fields
     semester_id = None  # type: int
     course_code = None  # type: str
@@ -71,14 +73,15 @@ class Offering(DynamoDBCachedObject):
     def range_key(self):
         return self.course_code
 
-    def __init__(self, semester_id, course_code):
+    def __init__(self, table, semester_id, course_code):
+        self.table = table
         self.semester_id = semester_id
         self.course_code = course_code
         super(Offering, self).__init__()
 
     @classmethod
-    def fetch(cls, semester_id, course_code):
-        query = boto3.resource('dynamodb').Table(cls.get_table_name()).get_item(
+    def fetch(cls, table, semester_id, course_code):
+        query = table.get_item(
             Key={
                 'course_code': course_code,
                 'semester_id': semester_id,
@@ -90,6 +93,7 @@ class Offering(DynamoDBCachedObject):
             raise NoResultFound()
 
         offering = cls(
+            table=table,
             semester_id=item.pop('semester_id'),
             course_code=item.pop('course_code'),
         )
@@ -102,7 +106,7 @@ class Offering(DynamoDBCachedObject):
 
     def delete(self):
         # type: () -> None
-        boto3.resource('dynamodb').Table(self.get_table_name()).delete_item(
+        self.table.delete_item(
             Key={
                 'course_code': self.course_code,
                 'semester_id': self.semester_id,
@@ -123,7 +127,7 @@ class Offering(DynamoDBCachedObject):
         item['course_code'] = self.course_code
         item['semester_id'] = self.semester_id
 
-        boto3.resource('dynamodb').Table(self.get_table_name()).put_item(
+        self.table.put_item(
             Item=item,
         )
 

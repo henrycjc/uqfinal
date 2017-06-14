@@ -7,9 +7,6 @@ from flask import Response
 from werkzeug.exceptions import HTTPException
 import logging
 
-logging.basicConfig()
-logger = logging.getLogger('api')
-
 SUCCESS = 'success'
 ERROR = 'error'
 FAIL = 'fail'
@@ -61,7 +58,6 @@ def api_response(f):
         except HTTPException:
             raise # This causes issues
         except Exception as e:
-            logger.exception(e)
             result = {
                 'status': ERROR,
                 'message': str(e),

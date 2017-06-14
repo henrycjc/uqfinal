@@ -1,10 +1,7 @@
 """
 A series of helpers for caching values locally in Python and on DynamoDB
 """
-import logging
 import decimal
-
-logger = logging.getLogger('api')
 
 
 class CachedProperty(object):
@@ -19,7 +16,6 @@ class CachedProperty(object):
         if instance is None:
             return self
         value = self.f(instance)
-        logger.warn("Calculating " + self.f.__name__)
         instance.__dict__[self.f.__name__] = value
         return value
 

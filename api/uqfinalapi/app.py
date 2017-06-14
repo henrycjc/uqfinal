@@ -47,6 +47,7 @@ def get_semesters():
 def get_offering(semester_uq_id, course_code):
     try:
         offering = models.Offering.fetch(
+            table=webapp.config['UQFINAL_TABLE_OFFERINGS'],
             semester_id=semester_uq_id,
             course_code=course_code,
         )
@@ -55,6 +56,7 @@ def get_offering(semester_uq_id, course_code):
     except NoResultFound:
         # Didn't find anything existing, try scraping it
         offering = models.Offering(
+            table=webapp.config['UQFINAL_TABLE_OFFERINGS'],
             semester_id=semester_uq_id,
             course_code=course_code,
         )
@@ -73,11 +75,11 @@ def get_offering(semester_uq_id, course_code):
 @api_response
 def invalidate_offering(semester_uq_id, course_code):
     try:
-        offering = _attempt_scrape(semester_uq_id, course_code)
-        return offering.serialise()
-    except scraper.ScraperInvalidCourseProfileException:
-        raise APIFailureException("Course profile is invalid")
-    except scraper.ScraperNoCourseProfileException:
-        raise APIFailureException("There is no course profile for that course code and semester. Course might not be listed as being offered")
-    except scraper.ScraperUnavailableCourseProfileException:
-        raise APIFailureException("Course profile is listed as unavailable. Try again after the course profile becomes available")
+        offering = models.Offering.fetch(
+            table=webapp.config['UQFINAL_TABLE_OFFERINGS'],
+            semester_id=semester_uq_id,
+            course_code=course_code,
+        )
+        offering.delete()
+    except NoResultFound:
+        raise APINotFoundException("No cache for that course and semester exists")

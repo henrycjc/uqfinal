@@ -136,10 +136,6 @@
         "AssessmentItem": {
             "type": "object",
             "properties": {
-                "id": {
-                    "type": "number",
-                    "description": "ID of the assessment item internal to UQ Final"
-                },
                 "taskName": {
                     "type": "string",
                     "description": "The title of the assessment item as obtained from UQ"

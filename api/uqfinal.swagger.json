@@ -71,36 +71,6 @@
                 }
             }
         },
-        "/scrape/{uqSemesterId}/{courseCode}": {
-            "get": {
-                "summary": "Scrape an Offering",
-                "description": "Will scrape data on a course only if the semester is valid and there isn't already data cached.\nThere is no way to force a rescrape of a course, invalid data must be fixed manually.\nThis route provides more detailed errors of scraping failure than the autoscrape built into the offering route does.\n",
-                "parameters": [
-                    {
-                        "name": "uqSemesterId",
-                        "in": "path",
-                        "required": true,
-                        "description": "The UQ Semester Code to find assessment details in",
-                        "type": "string"
-                    },
-                    {
-                        "name": "courseCode",
-                        "in": "path",
-                        "required": true,
-                        "description": "The UQ Course Code to find assessment details for",
-                        "type": "string"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Offering details",
-                        "schema": {
-                            "$ref": "#/definitions/Offering"
-                        }
-                    }
-                }
-            }
-        }
     },
     "definitions": {
         "Semester": {

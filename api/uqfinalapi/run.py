@@ -1,8 +1,6 @@
 import os
 
 from app import webapp
-from orm import DB, Session
-import models
 
 webapp.config.update({
     'SQLALCHEMY_DATABASE_URI': os.environ['UQFINAL_DB_URI'],
@@ -10,16 +8,7 @@ webapp.config.update({
     'SQLALCHEMY_POOL_SIZE': 0,
     'SQLALCHEMY_POOL_RECYCLE': 500,
 })
-DB.init_app(webapp)
 
 
 if __name__ == "__main__":
-    import sys
-    args = sys.argv
-    if len(args) > 1 and args[1] == "generatedb":
-        with webapp.app_context():
-            s = Session()
-            models.ORMBase.metadata.create_all(s.connection())
-            s.commit()
-    else:
-        webapp.run(port=8080)
+    webapp.run(port=8080)

@@ -1,143 +1,229 @@
 """
-Database models
+Document Models
+
+UQFinal is powered completely by AWS DynamoDB
 """
-from sqlalchemy import Column, ForeignKeyConstraint, UniqueConstraint
-from sqlalchemy.orm import relationship
-from sqlalchemy.types import Integer, String, Boolean
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
+import boto3
+import urlparse
 
-from orm import Session
+import scraper
+from helpers import NoResultFound
+from caching import dynamodb_cached_property, DynamoDBCachedObject, dynamodb_cast_types_to_python
 
-
-DEFAULT_CUTOFFS = {
-    1: 0,
-    2: 30,
-    3: 45,
-    4: 50,
-    5: 65,
-    6: 75,
-    7: 85,
-}
+# Typing is for IDE only, doesn't matter at all
+try:
+    from typing import Optional, List
+except ImportError:
+    pass
 
 
-class _ORMBase(object):
-    id = Column(Integer, primary_key=True)
+class Semester(object):
+    """
+    A semester is a timeframe in which a course is offered
+    A semester has an ID which is provided by UQ using some scheme they have
+    """
+    id = None  # type: int
+    name = None  # type: str
+    short_name = None  # type: str
+    is_current = None  # type: bool
 
-    @declared_attr
-    def __tablename__(cls):
-        return cls.__name__.lower()
-
-
-ORMBase = declarative_base(cls=_ORMBase)
-
-
-class ORMMixin(ORMBase):
-    __abstract__ = True
-
-    @declared_attr
-    def __table_args__(cls):
-        return cls.get_table_args()
-
-    @classmethod
-    def get_table_args(cls):
-        return ()
+    def __init__(self, id, name, short_name, is_current=False):
+        self.id = id
+        self.name = name
+        self.short_name = short_name
+        self.is_current = is_current
 
     def serialise(self):
-        raise NotImplementedError
-
-
-class Semester(ORMMixin):
-    semester = Column(String(255), nullable=False)  # Must match the format on uq site (e.g. "Semester 1, 2016")
-    short_name = Column(String(255), nullable=False)  # Displayed on the app (e.g. "Sem 1, 2016")
-    uq_id = Column(Integer, nullable=False)  # The UQ ID for a semester (e.g. 6670)
-    is_current = Column(Boolean, nullable=False, default=False)  # Only one should ever be True at a time
-
-    def serialise(self):
+        # type: () -> dict
         return {
-            'semester': self.semester,
+            'uqId': self.id,
+            'semester': self.name,
             'shortName': self.short_name,
-            'uqId': self.uq_id,
             'isCurrent': self.is_current,
         }
 
+
+SEMESTERS = [
+    Semester(6560, "Semester 2, 2015", "Sem 2, 2015"),
+    Semester(6620, "Semester 1, 2016", "Sem 1, 2016"),
+    Semester(6660, "Semester 2, 2016", "Sem 2, 2016"),
+    Semester(6720, "Semester 1, 2017", "Sem 1, 2017", True),
+]
+
+
+class Offering(DynamoDBCachedObject):
+    """
+    An Offering is a course being run in a Semester
+    """
     @classmethod
-    def get_current_semester(cls):
-        return Session().query(
-            cls
-        ).filter(
-            cls.is_current == True,
-        ).one()
+    def get_table_name(self):
+        return "uqfinal-offerings"
 
+    # Key fields
+    semester_id = None  # type: int
+    course_code = None  # type: str
 
-class Course(ORMMixin):
-    course_code = Column(String(255), nullable=False, unique=True)
+    @property
+    def partition_key(self):
+        return self.course_code
 
-    def __init__(self, course_code):
+    @property
+    def range_key(self):
+        return self.course_code
+
+    def __init__(self, semester_id, course_code):
+        self.semester_id = semester_id
         self.course_code = course_code
-
-    def serialise(self):
-        return {
-            'courseCode': self.course_code,
-        }
-
-
-class Offering(ORMMixin):
-    """
-    An offering is a course in a semester which has assessment
-    """
-    course_id = Column(Integer, nullable=False)
-    semester_id = Column(Integer, nullable=False)
-    is_linear = Column(Boolean, nullable=False, default=True)
-    manually_modified = Column(Boolean, nullable=False, default=False)
-    calculable = Column(Boolean, nullable=False, default=True)
-    message = Column(String(255), nullable=True)
-
-    cutoff_1 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(1))
-    cutoff_2 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(2))
-    cutoff_3 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(3))
-    cutoff_4 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(4))
-    cutoff_5 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(5))
-    cutoff_6 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(6))
-    cutoff_7 = Column(Integer, nullable=False, default=DEFAULT_CUTOFFS.get(7))
-
-    course = relationship('Course')
-    semester = relationship('Semester')
+        super(Offering, self).__init__()
 
     @classmethod
-    def get_table_args(cls):
-        return (
-            ForeignKeyConstraint(
-                ['course_id'],
-                ['course.id'],
-                ondelete='CASCADE',
-            ),
-            ForeignKeyConstraint(
-                ['semester_id'],
-                ['semester.id'],
-                ondelete='CASCADE',
-            ),
-            UniqueConstraint('course_id', 'semester_id'),
+    def fetch(cls, semester_id, course_code):
+        query = boto3.resource('dynamodb').Table(cls.get_table_name()).get_item(
+            Key={
+                'course_code': course_code,
+                'semester_id': semester_id,
+            }
+        )
+        item = query.get('Item')
+
+        if not item:
+            raise NoResultFound()
+
+        offering = cls(
+            semester_id=item.pop('semester_id'),
+            course_code=item.pop('course_code'),
         )
 
-    def __init__(self, course_id, semester_id, is_linear=True, manually_modified=False, calculable=True, message=None,
-                 cutoff_1=None, cutoff_2=None, cutoff_3=None, cutoff_4=None, cutoff_5=None, cutoff_6=None, cutoff_7=None):
-        self.course_id = course_id
-        self.semester_id = semester_id
-        self.is_linear = is_linear
-        self.manually_modified = manually_modified
-        self.calculable = calculable
-        self.message = message
-        self.cutoff_1 = cutoff_1 or DEFAULT_CUTOFFS[1]
-        self.cutoff_2 = cutoff_2 or DEFAULT_CUTOFFS[2]
-        self.cutoff_3 = cutoff_3 or DEFAULT_CUTOFFS[3]
-        self.cutoff_4 = cutoff_4 or DEFAULT_CUTOFFS[4]
-        self.cutoff_5 = cutoff_5 or DEFAULT_CUTOFFS[5]
-        self.cutoff_6 = cutoff_6 or DEFAULT_CUTOFFS[6]
-        self.cutoff_7 = cutoff_7 or DEFAULT_CUTOFFS[7]
+        for key, value in item.iteritems():
+            if value is not None:
+                setattr(offering, key, dynamodb_cast_types_to_python(value))
+
+        return offering
+
+    def delete(self):
+        # type: () -> None
+        boto3.resource('dynamodb').Table(self.get_table_name()).delete_item(
+            Key={
+                'course_code': self.course_code,
+                'semester_id': self.semester_id,
+            }
+        )
+
+    def save(self):
+        # type: () -> None
+        """
+        Save the state of this offering to DynamoDB
+        """
+        item = {
+            attr_name: getattr(self, attr_name)
+            for attr_name in dir(self)
+            if type(getattr(self.__class__, attr_name)) == dynamodb_cached_property
+        }
+
+        item['course_code'] = self.course_code
+        item['semester_id'] = self.semester_id
+
+        boto3.resource('dynamodb').Table(self.get_table_name()).put_item(
+            Item=item,
+        )
+
+    # Semester lookup
+    @property
+    def semester(self):
+        return (s for s in SEMESTERS if s.id == self.semester_id).next()
+
+    # Data sources
+    @dynamodb_cached_property
+    def course_profile_id(self):
+        # type: () -> int
+        url = scraper.get_course_profile_url(self.semester.name, self.course_code)
+        parsed_url = urlparse.urlparse(url)
+        query_string = urlparse.parse_qs(parsed_url.query)
+        return int(query_string['profileId'][0])
+
+    @property
+    def course_profile_assessment_url(self):
+        # type: () -> str
+        return "http://www.courses.uq.edu.au/student_section_loader.php?section=5&profileId={}".format(self.course_profile_id)
+
+    @dynamodb_cached_property
+    def manually_modified(self):
+        # type: () -> bool
+        # If this is being called, there is no cached value, so we haven't modified anything
+        return False
+
+    @dynamodb_cached_property
+    def is_linear(self):
+        # type: () -> bool
+        # This doesn't do anything yet
+        return True
+
+    @dynamodb_cached_property
+    def calculable(self):
+        # type: () -> bool
+        # This doesn't do anything yet
+        return True
+
+    @dynamodb_cached_property
+    def message(self):
+        # type: () -> Optional[str]
+        # This is only manually set if there is some special consideration for this course
+        # Default value here
+        return None
+
+    @dynamodb_cached_property
+    def cutoff_1(self):
+        # type: () -> int
+        # Default value
+        return 0
+
+    @dynamodb_cached_property
+    def cutoff_2(self):
+        # type: () -> int
+        # Default value
+        return 30
+
+    @dynamodb_cached_property
+    def cutoff_3(self):
+        # type: () -> int
+        # Default value
+        return 45
+
+    @dynamodb_cached_property
+    def cutoff_4(self):
+        # type: () -> int
+        # Default value
+        return 50
+
+    @dynamodb_cached_property
+    def cutoff_5(self):
+        # type: () -> int
+        # Default value
+        return 65
+
+    @dynamodb_cached_property
+    def cutoff_6(self):
+        # type: () -> int
+        # Default value
+        return 75
+
+    @dynamodb_cached_property
+    def cutoff_7(self):
+        # type: () -> int
+        # Default value
+        return 85
+
+    @dynamodb_cached_property
+    def assessment_items(self):
+        # type: () -> List[dict]
+        # Load assessment items
+        return scraper.get_assessment_items(self.course_profile_assessment_url)
 
     def serialise(self):
         return {
-            'course': self.course.serialise(),
+            'course': {
+                'courseCode': self.course_code,
+            },
             'semester': self.semester.serialise(),
             'isLinear': self.is_linear,
             'manuallyModified': self.manually_modified,
@@ -151,50 +237,5 @@ class Offering(ORMMixin):
                 6: self.cutoff_6,
                 7: self.cutoff_7,
             },
-            'assessment': [
-                item.serialise()
-                for item in self.get_assessment_items()
-            ]
+            'assessment': [item for item in self.assessment_items],
         }
-
-    def get_assessment_items(self):
-        return Session().query(
-            AssessmentItem
-        ).filter(
-            AssessmentItem.offering_id == self.id,
-        ).all()
-
-
-class AssessmentItem(ORMMixin):
-    offering_id = Column(Integer, nullable=False)
-    task_name = Column(String(255), nullable=False)
-    weight = Column(String(255), nullable=False)
-
-    @classmethod
-    def get_table_args(cls):
-        return (
-            ForeignKeyConstraint(
-                ['offering_id'],
-                ['offering.id'],
-                ondelete='CASCADE',
-            ),
-        )
-
-    def __init__(self, offering_id, task_name, weight):
-        self.offering_id = offering_id
-        self.task_name = task_name
-        self.weight = weight
-
-    def serialise(self):
-        return {
-            'id': self.id,
-            'taskName': self.task_name,
-            'weight': self.weight,
-        }
-
-    def is_integer_weight(self):
-        try:
-            int(self.weight)
-            return True
-        except ValueError:
-            return False

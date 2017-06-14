@@ -6,10 +6,8 @@ here = os.path.abspath(os.path.dirname(__file__))
 README = open(os.path.join(os.path.dirname(here), 'README.md')).read()
 
 install_deps = [
+    'boto3',
     'Flask',
-    'SQLAlchemy',
-    'Flask-SQLAlchemy',
-    'pymysql',
     'requests',
     'lxml',
 ]

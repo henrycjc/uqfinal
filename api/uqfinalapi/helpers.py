@@ -5,6 +5,10 @@ from functools import wraps
 import json
 from flask import Response
 from werkzeug.exceptions import HTTPException
+import logging
+
+logging.basicConfig()
+logger = logging.getLogger('api')
 
 SUCCESS = 'success'
 ERROR = 'error'
@@ -20,6 +24,10 @@ class APIFailureException(APIException):
 
 
 class APINotFoundException(APIException):
+    pass
+
+
+class NoResultFound(Exception):
     pass
 
 
@@ -53,6 +61,7 @@ def api_response(f):
         except HTTPException:
             raise # This causes issues
         except Exception as e:
+            logger.exception(e)
             result = {
                 'status': ERROR,
                 'message': str(e),

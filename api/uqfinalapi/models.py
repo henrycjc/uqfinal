@@ -4,6 +4,7 @@ Document Models
 UQFinal is powered completely by AWS DynamoDB
 """
 import urlparse
+import time
 
 import scraper
 from helpers import NoResultFound
@@ -151,6 +152,11 @@ class Offering(DynamoDBCachedObject):
         return "http://www.courses.uq.edu.au/student_section_loader.php?section=5&profileId={}".format(self.course_profile_id)
 
     @dynamodb_cached_property
+    def scraped_timestamp(self):
+        return int(time.time())
+
+    # Data
+    @dynamodb_cached_property
     def manually_modified(self):
         # type: () -> bool
         # If this is being called, there is no cached value, so we haven't modified anything
@@ -243,4 +249,5 @@ class Offering(DynamoDBCachedObject):
                 7: self.cutoff_7,
             },
             'assessment': [item for item in self.assessment_items],
+            'lastUpdated': self.scraped_timestamp,
         }

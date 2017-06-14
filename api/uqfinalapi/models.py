@@ -228,6 +228,7 @@ class Offering(DynamoDBCachedObject):
             'course': {
                 'courseCode': self.course_code,
             },
+            'courseProfileId': self.course_profile_id,
             'semester': self.semester.serialise(),
             'isLinear': self.is_linear,
             'manuallyModified': self.manually_modified,

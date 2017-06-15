@@ -122,7 +122,7 @@ class Offering(DynamoDBCachedObject):
         item = {
             attr_name: getattr(self, attr_name)
             for attr_name in dir(self)
-            if type(getattr(self.__class__, attr_name)) == dynamodb_cached_property
+            if isinstance(getattr(self.__class__, attr_name), dynamodb_cached_property)
         }
 
         item['course_code'] = self.course_code

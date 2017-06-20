@@ -64,7 +64,7 @@ def api_response(f):
             }
             response.status_code = 500
 
-        response.response = json.dumps(result)
+        response.data = json.dumps(result)
         return response
 
     return inner
